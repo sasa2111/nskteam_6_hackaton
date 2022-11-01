@@ -1,0 +1,1 @@
+# nskteam_6_hackaton
