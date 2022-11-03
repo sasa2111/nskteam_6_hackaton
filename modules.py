@@ -6,6 +6,7 @@ import base64
 import datetime
 import time
 import dill
+import streamlit as st
 import geopy
 from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
@@ -13,7 +14,7 @@ from geopy import distance
 
 ###############################################################################
 #Функция обработки одного письма в почте:
-
+@st.cache
 def mail_preparation(msg):
     # вытаскиваем характеристики письма
     letter_date = email.utils.parsedate_tz(msg["Date"])
@@ -26,15 +27,15 @@ def mail_preparation(msg):
         if part.get_content_maintype() == 'text':
             s = base64.b64decode(part.get_payload()).decode()
 
-    # переходим к расшифровке тела письма
+    # переходим к расшифровке тела письма. Создаем словарь - болванку.
     dictionary = {'rooms': [], 'square': [], 'floor': [], 'floors': [], 'address': [],
                   'st_metro': [], 'metro_minutes': [], 'price': [], 'unit_price': [],
                   'balkon': [], 'segment': [], 'repair': [], 'material': [],
                   'day': [], 'month': [], 'year': []}
 
-    # вытащим содержательные данные из тела письма в словарь
+    # вытащим содержательные данные из тела письма в этот словарь
 
-    # ВАЖНО! Если в письмах что-то поменяется, это работать перестанет, нужно поддерживать алгоритм,
+    # ВАЖНО! Если в письмах что-то поменяется, это работать перестанет, нужно поддерживать алгоритм.
     # надо следить, что каждый день что-то парсится. Если парсинг прекратился - значит либо беда с рассылкой,
     # либо надо проверить, что поменялось в письмах и под них подстроиться.
 
@@ -123,6 +124,7 @@ def mail_preparation(msg):
     for item in header_dict:
         if header.find(item) != -1:
             dictionary[header_dict[item]] = [item for x in range(len(dictionary['year']))]
+
     # и поверх на всякий случай отдельные тонкости проверяем
     if header.find('монолит') != -1:
         dictionary['material'] = ['монолит' for x in range(len(dictionary['year']))]
@@ -131,7 +133,7 @@ def mail_preparation(msg):
         dictionary['segment'] = ['старый жилой фонд' for x in range(len(dictionary['year']))]
 
 
-    exception = 0
+    exception = 0 #индикатор ошибки парсинга
 
     # запишем вседанные из письма в датафрейм, если все хорошо спарсилось
     try:
@@ -150,6 +152,7 @@ def mail_preparation(msg):
                       'day': [], 'month': [], 'year': []}
         df = pd.DataFrame.from_dict(dictionary) #пустой датафрейм
 
+    #если ошибок не было и датафрейм сгенерился:
     if exception ==0:
 
         # считаем, что кухня занимает 20% от общей площади
@@ -183,7 +186,7 @@ def mail_preparation(msg):
 
 #################################################################################
 # функция для обработки всех непрочитанных писем в почте и объединения их в одну таблицу
-
+@st.cache
 def update_notifications():
     # заготовки будущей таблицы
     start = time.time()
@@ -227,10 +230,11 @@ def update_notifications():
         dill.dump(df_base, file)
     end = time.time()
 
-    return len(df), df_base,(end - start) / 60
+    return len(df), df_base, (end - start) / 60
 
 #############################################################################
 #Подбор аналогов для эталона
+#@st.cache
 def find_analogs(etalon, dist = 1.0, segment = [], rooms = [], repair = [], square = 1000.0, material = [],
                      floor = [], metro_minutes = 30.0):
 
@@ -250,19 +254,179 @@ def find_analogs(etalon, dist = 1.0, segment = [], rooms = [], repair = [], squa
             df1 = df1[df1.repair.isin(repair)]
         if len(material) > 0:
             df1 = df1[df1.material.isin(material)]
+
         if len(floor) > 0:
             df1['floor_type'] = df1.apply(lambda x: 'первый' if x.floor == 1
             else ('последний' if x.floor == x.floors else 'средний'), axis = 1)
             df1 = df1[df1.floor_type.isin(floor)]
 
         df1 = df1[(df1.square < square + etalon.loc[0,'Площадь квартиры, кв.м'])&((df1.square > -square + etalon.loc[0,'Площадь квартиры, кв.м']))]
-       # df1 = df1[df1.metro_minutes <= metro_minutes]
+        df1 = df1[df1.metro_minutes <= metro_minutes]
+
 
     return df1
 
 ##########################################################################################
 # Функция, которая будет применяться к каждому из отобранных аналогов эталона для общего расчета уд.цены.
-def count_analog_unitprice(etalon, analog):
+@st.cache
+def count_analog_unitprice(etalon, analog,i):
     unit_price = list(analog['unit_price'])[0]*1
 
-    return analog, unit_price
+    # Матрицы корректировок:
+    corr_torg = -0.045
+
+    corr_floor = pd.DataFrame.from_dict({'etalon':['первый', 'средний', 'последний'],
+                                         'первый': [0.0, 0.075, 0.032],
+                                         'средний': [-0.07, 0.0, -0.04],
+                                         'последний': [-0.31, 0.042, 0.0]})
+
+
+    corr_square_cat = pd.DataFrame.from_dict({'etalon':['<30', '30-50', '50-65', '65-90', '90-120', '>120'],
+                                              '<30':[0.0, -0.06, -0.12, -0.17, -0.22, -0.24],
+                                              '30-50':[0.06, 0.0, -0.07, -0.12, -0.17, -0.19],
+                                              '50-65':[0.14, 0.07, 0.0, -0.06, -0.11, -0.13],
+                                              '65-90':[0.21, 0.14, 0.06, 0.0, -0.06, -0.08],
+                                              '90-120':[0.28, 0.21, 0.13, 0.06, 0.0, -0.03],
+                                              '>120':[0.31, 0.24, 0.16, 0.09, 0.03, 0.0]})
+    corr_kitchen_cat = pd.DataFrame.from_dict({'etalon':['<7', '7-10', '>10'],
+                                               '<7':[0.0, 0.03, 0.09],
+                                               '7-10':[-0.029, 0.0, 0.058],
+                                               '>10':[-0.083, -0.055, 0.0]})
+    corr_balkon = -0.05 #в наших данных всегда либо четко указан балкон, либо мы не знаем.
+    # если не знаем - считаем, что балкон есть по умолчанию. То есть среди аналогов тут всегда "да".
+    # Поэтому по балкону в системе либо не будет корректировки. Либо на случай, если у эталона балкона нет.
+
+    corr_metro = pd.DataFrame.from_dict({'etalon':['<5', '5-10', '10-15', '15-30', '30-60', '>60'],
+                                         '<5':[0.0, -0.07, -0.11, -0.15, -0.19, -0.22],
+                                         '5-10': [0.07, 0.0, -0.04, -0.08, -0.13, -0.17],
+                                         '10-15': [0.12, 0.04, 0.0, -0.05, -0.1, -0.13],
+                                         '15-30': [0.17, 0.09, 0.05, 0.0, -0.06, -0.09],
+                                         '30-60': [0.24, 0.15, 0.11, 0.06, 0.0, -0.04],
+                                         '>60': [0.29, 0.2, 0.15, 0.1, 0.04, 0.0]})
+    corr_repair = pd.DataFrame.from_dict({'etalon':['Без отделки', 'Муниципальный ремонт', 'Современный ремонт'],
+                                          'требует ремонта':[0, 13400, 20100],
+                                          'косметический ремонт':[-13400, 0, 6700],
+                                          'евроремонт':[-20100, -6700, 0]})
+
+    #некоторые сокращения:
+    etalon_floor_type = etalon.loc[0, 'floor_type']
+    etalon_sq_cat = etalon.loc[0, 'sq_category']
+    etalon_kitchen_type = etalon.loc[0, 'kitchen_category']
+    etalon_balkon_type = etalon.loc[0, 'Наличие балкона/лоджии']
+    etalon_metro_min = etalon.loc[0, 'metro_min_cat']
+    etalon_repair = etalon.loc[0,'Состояние']
+
+    # добавляем корректировки (проценты для конкретного аналога)
+    # на торг
+    analog['corr_torg'] = corr_torg
+    # на этаж
+    analog['corr_floor_type'] = analog.apply(lambda x: corr_floor[corr_floor.etalon == etalon_floor_type]\
+                                             [x.floor_type],axis = 1)
+    # на площадь
+    analog['corr_square_cat'] = analog.apply(lambda x: corr_square_cat[corr_square_cat.etalon == etalon_sq_cat]\
+        [x.sq_category], axis=1)
+
+    # На кухню
+    analog['corr_kitchen_cat'] = analog.apply(lambda x: corr_kitchen_cat[corr_kitchen_cat.etalon == etalon_kitchen_type] \
+        [x.kitchen_category], axis=1)
+
+    # корр. на балкон (у аналогов он всегда есть, либо н/д --> тоже есть (считаем так)
+    # Поэтому тут либо 0 будет, либо по таблице -5%
+    analog['corr_balkon'] = analog.apply( lambda x: corr_balkon if etalon_balkon_type.lower() == "нет"
+                                          else 0, axis = 1)
+
+    #корректировки метро (время пешком)
+    analog['corr_metro_min'] = analog.apply(lambda x: corr_metro[corr_metro.etalon == etalon_metro_min]\
+        [x.metro_min_cat], axis=1)
+
+    # на ремонт.
+    #если в аналоге нет данных по ремонту (н/д), то считаем, что в нем нет ремонта (требует ремонта)
+    analog['corr_repair'] = analog.apply(lambda x: corr_repair[corr_repair.etalon == etalon_repair][x.repair] if x.repair!='н/д'
+                                         else corr_repair[corr_repair.etalon == etalon_repair]['требует ремонта'], axis=1)
+
+    #для каждого аналога считаем скорректированную цену
+    analog['corr_unit_price'] = analog.unit_price * (1+analog.corr_torg)*(1+analog.corr_floor_type)* \
+                                (1+analog.corr_square_cat)*(1+analog.corr_kitchen_cat)*(1+analog.corr_balkon)* \
+                                (1+analog.corr_metro_min)+analog['corr_repair']
+
+    return analog
+
+
+############################################################################
+# Функция расчета пула
+@st.cache
+def count_pool_unitprice(etalon, pool, i):
+    # некоторые сокращения:
+    etalon_floor_type = etalon.loc[0, 'floor_type']
+    etalon_sq_cat = etalon.loc[0, 'sq_category']
+    etalon_kitchen_type = etalon.loc[0, 'kitchen_category']
+    etalon_balkon_type = etalon.loc[0, 'Наличие балкона/лоджии']
+    etalon_metro_min = etalon.loc[0, 'metro_min_cat']
+    etalon_repair = etalon.loc[0, 'Состояние']
+
+    # Матрицы корректировок:
+    corr_torg = -0.045
+
+    corr_floor = pd.DataFrame.from_dict({'pool': ['первый', 'средний', 'последний'],
+                                         'первый': [0.0, 0.075, 0.032],
+                                         'средний': [-0.07, 0.0, -0.04],
+                                         'последний': [-0.31, 0.042, 0.0]})
+
+    corr_square_cat = pd.DataFrame.from_dict({'pool': ['<30', '30-50', '50-65', '65-90', '90-120', '>120'],
+                                              '<30': [0.0, -0.06, -0.12, -0.17, -0.22, -0.24],
+                                              '30-50': [0.06, 0.0, -0.07, -0.12, -0.17, -0.19],
+                                              '50-65': [0.14, 0.07, 0.0, -0.06, -0.11, -0.13],
+                                              '65-90': [0.21, 0.14, 0.06, 0.0, -0.06, -0.08],
+                                              '90-120': [0.28, 0.21, 0.13, 0.06, 0.0, -0.03],
+                                              '>120': [0.31, 0.24, 0.16, 0.09, 0.03, 0.0]})
+    corr_kitchen_cat = pd.DataFrame.from_dict({'pool': ['<7', '7-10', '>10'],
+                                               '<7': [0.0, 0.03, 0.09],
+                                               '7-10': [-0.029, 0.0, 0.058],
+                                               '>10': [-0.083, -0.055, 0.0]
+                                               })
+    corr_balkon = pd.DataFrame.from_dict({'pool':['Нет', 'Да'],
+                                          'Нет':[0.0, 0.053],
+                                          'Да':[-0.05, 0.0]
+                                          })
+
+    corr_metro = pd.DataFrame.from_dict({'pool': ['<5', '5-10', '10-15', '15-30', '30-60', '>60'],
+                                         '<5': [0.0, -0.07, -0.11, -0.15, -0.19, -0.22],
+                                         '5-10': [0.07, 0.0, -0.04, -0.08, -0.13, -0.17],
+                                         '10-15': [0.12, 0.04, 0.0, -0.05, -0.1, -0.13],
+                                         '15-30': [0.17, 0.09, 0.05, 0.0, -0.06, -0.09],
+                                         '30-60': [0.24, 0.15, 0.11, 0.06, 0.0, -0.04],
+                                         '>60': [0.29, 0.2, 0.15, 0.1, 0.04, 0.0]})
+    corr_repair = pd.DataFrame.from_dict({'pool': ['Без отделки', 'Муниципальный ремонт', 'Современный ремонт'],
+                                          'Без отделки': [0, 13400, 20100],
+                                          'Муниципальный ремонт': [-13400, 0, 6700],
+                                          'Современный ремонт': [-20100, -6700, 0]})
+    # добавляем корректировки (проценты для конкретного аналога)
+    # на торг корректировку не добавляем, т.к. в эталоне она уже применялась при расчете цены
+
+
+    # на этаж
+    pool['corr_floor_type'] = pool.apply(lambda x: corr_floor[corr_floor.pool == x.floor_type] \
+        [etalon_floor_type], axis=1)
+    # на площадь
+    pool['corr_square_cat'] = pool.apply(lambda x: corr_square_cat[corr_square_cat.pool == x.sq_category] \
+        [etalon_sq_cat], axis=1)
+
+    # На кухню
+    pool['corr_kitchen_cat'] = pool.apply(lambda x: corr_kitchen_cat[corr_kitchen_cat.pool == x.kitchen_category] \
+        [etalon_kitchen_type], axis=1)
+
+    # корр. на балкон
+    pool['corr_balkon'] = pool.apply(lambda x: corr_balkon[corr_balkon.pool == x['Наличие балкона/лоджии']]\
+        [etalon_balkon_type], axis=1)
+
+    # корректировки метро (время пешком)
+    pool['corr_metro_min'] = pool.apply(lambda x: corr_metro[corr_metro.pool == x.metro_min_cat] \
+        [etalon_metro_min], axis=1)
+    # на ремонт
+    pool['corr_repair'] = pool.apply(lambda x: corr_repair[corr_repair.pool == x['Состояние']][etalon_repair], axis=1)
+
+    pool['unit_price'] = etalon.loc[0, 'unit_price'] * (1 + pool.corr_floor_type) * \
+                         (1 + pool.corr_square_cat) * (1 + pool.corr_kitchen_cat) * \
+                         (1 + pool.corr_balkon) *(1 + pool.corr_metro_min) + \
+                         pool['corr_repair']
+    return pool
