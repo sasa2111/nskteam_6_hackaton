@@ -1,4 +1,7 @@
 #import openpyxl
+
+
+import geopy
 import streamlit as st
 import pandas as pd
 
@@ -38,6 +41,7 @@ if file is None:
 if file is not None:
     st.write(file)
     df1 = pd.read_excel(file)
+    df1.loc[df1['Количество комнат'] == 'Студия', 'Количество комнат'] = 0.5
     st.write('Вы загрузили:')
     st.dataframe(df1)
     st.subheader("Найти координаты эталона")
@@ -51,27 +55,36 @@ if file is not None:
         geocode = RateLimiter(geolocator.geocode)
 
     #Если координаты подкачиваются, то запишем их в таблицу и выведем на экран
-        addressfind = (df1.loc[df1['Эталон'] == 1, 'Местоположение']).str.replace('жилищный комплекс', '') \
-                              .str.replace('ЖК', '').str.replace('поселок', '').str.replace('пос.', '').str.replace('г.','')\
-                              .str.replace('поселение', '').str.replace('жилой комплекс', '').str.replace('д.','').str.replace('ул.','')
+        addressfind = (df1.loc[df1['Эталон'] == 1, 'Местоположение']).replace('жилищный комплекс', '') \
+                              .replace('ЖК ', ' ').replace('поселок ', ' ').replace('пос. ', ' ').replace('г.','')\
+                              .replace('поселение ', ' ').replace('жилой комплекс ', ' ').replace('д. ',' ').replace('ул. ',' ')
 
         df1['short_address'] = None
         df1['lat'] = None
         df1['lon'] = None
         df1.loc[df1['Эталон'] == 1, 'short_address'] = addressfind
+        #df1['help'] = df1.apply(lambda x: geocode(x['Местоположение'])[1], axis = 1)
+        st.write(df1)
         #df1 = df1.copy()
-        #st.write(geocode(addressfind.tolist())[1])
+        #st.write(geocode(addressfind.tolist()[0])[1])
         if geocode(addressfind.tolist()) != None:
             coords = geocode(addressfind.tolist())[1]
             if len(coords) > 0:
                 st.write('Координаты найдены!')
                 df1.loc[df1['Эталон'] == 1, 'lat'] = coords[0]
                 df1.loc[df1['Эталон'] == 1, 'lon'] = coords[1]
-                st.write(df1[df1['Эталон'] == 1][['Местоположение','lat','lon','short_address']])
+                st.write(df1[df1['Эталон'] == 1][['Местоположение','lat','lon']])
                 df1.to_excel(f'C:/Users/Sasha/PycharmProjects/hackaton2/userdata/etalon.xlsx')
                 st.map(df1[df1['Эталон'] == 1][['lat', 'lon']])
-
-
+        #elif geocode(addressfind.tolist()[0]) != None:
+           #coords = geocode(addressfind.tolist()[0])[1]
+          #  if len(coords) > 0:
+             #   st.write('Координаты найдены!')
+             #   df1.loc[df1['Эталон'] == 1, 'lat'] = coords[0]
+              #  df1.loc[df1['Эталон'] == 1, 'lon'] = coords[1]
+             #   st.write(df1[df1['Эталон'] == 1][['Местоположение', 'lat', 'lon', 'short_address']])
+             #   df1.to_excel(f'C:/Users/Sasha/PycharmProjects/hackaton2/userdata/etalon.xlsx')
+              #  st.map(df1[df1['Эталон'] == 1][['lat', 'lon']])
 
         else:
             st.write('Не удалось подкачать координаты эталона.')
