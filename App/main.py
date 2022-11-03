@@ -23,7 +23,8 @@ file = st.file_uploader('Загрузите таблицу для оценки x
 
 if file is None:
     st.write('Ниже пример файла для загрузки. ','\n',
-             'Для студии - число комнат указать 0.5, '
+             'адрес рекомендуется писать без обозначений "г", "д", "пос", желательный формат: Москва, Мордагуловой, 22 к1', "\n",
+             'Для студии - число комнат указать 0.5 или "Студия", '
              'для свободной планировки/пентхауса/аппартаментов (где не указано) - 0.','\n',
              'В поле Эталон - указать один эталонный объект - 1, остальные - 0.')
     sample = pd.read_excel('./sample_for_user.xlsx')
@@ -32,6 +33,7 @@ if file is None:
 if file is not None:
     st.write(file)
     df1 = pd.read_excel(file)
+    df1.loc[df1['Количество комнат'] == 'Студия', 'Количество комнат'] = 0.5
     st.write('Вы загрузили:')
     st.dataframe(df1)
     st.subheader("Найти координаты эталона")
@@ -45,9 +47,9 @@ if file is not None:
         geocode = RateLimiter(geolocator.geocode)
 
     #Если координаты подкачиваются, то запишем их в таблицу и выведем на экран
-        addressfind = (df1.loc[df1['Эталон'] == 1, 'Местоположение']).str.replace('жилищный комплекс', '') \
-                              .str.replace('ЖК', '').str.replace('поселок', '').str.replace('пос.', '').str.replace('г.','')\
-                              .str.replace('поселение', '').str.replace('жилой комплекс', '').str.replace('д.','').str.replace('ул.','')
+        addressfind = (df1.loc[df1['Эталон'] == 1, 'Местоположение']).replace('жилищный комплекс', '') \
+                              .replace('ЖК ', ' ').replace('поселок ', ' ').replace('пос. ', ' ').replace('г.','')\
+                              .replace('поселение ', ' ').replace('жилой комплекс ', ' ').replace('д. ',' ').replace('ул. ',' ')
 
         df1['short_address'] = None
         df1['lat'] = None
@@ -61,10 +63,9 @@ if file is not None:
                 st.write('Координаты найдены!')
                 df1.loc[df1['Эталон'] == 1, 'lat'] = coords[0]
                 df1.loc[df1['Эталон'] == 1, 'lon'] = coords[1]
-                st.write(df1[df1['Эталон'] == 1][['Местоположение','lat','lon','short_address']])
+                st.write(df1[df1['Эталон'] == 1][['Местоположение','lat','lon']])
                 df1.to_excel('./userdata/etalon.xlsx')
                 st.map(df1[df1['Эталон'] == 1][['lat', 'lon']])
-
 
 
         else:
