@@ -1,0 +1,6 @@
+openpyxl==3.0.9
+streamlit==1.13.0
+dill==0.3.4
+geopy==2.2.0
+datetime==4.7
+
