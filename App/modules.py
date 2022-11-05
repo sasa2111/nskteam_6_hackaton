@@ -10,7 +10,7 @@ import streamlit as st
 import geopy
 from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
-from geopy import distance
+
 
 ###############################################################################
 #Функция обработки одного письма в почте:
@@ -186,7 +186,7 @@ def mail_preparation(msg):
 
 #################################################################################
 # функция для обработки всех непрочитанных писем в почте и объединения их в одну таблицу
-@st.cache
+#@st.cache
 def update_notifications():
     # заготовки будущей таблицы
     start = time.time()
@@ -226,6 +226,7 @@ def update_notifications():
 
     df_base = pd.concat([df_base, df], ignore_index=True)
 
+
     with open('./df_for_system.pkl', 'wb') as file:
         dill.dump(df_base, file)
     end = time.time()
@@ -234,7 +235,7 @@ def update_notifications():
 
 #############################################################################
 #Подбор аналогов для эталона
-#@st.cache
+@st.cache
 def find_analogs(etalon, dist = 1.0, segment = [], rooms = [], repair = [], square = 1000.0, material = [],
                      floor = [], metro_minutes = 30.0):
 
