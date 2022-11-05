@@ -25,9 +25,9 @@ st.markdown(hide_menu_style, unsafe_allow_html=True)
 st.title(":house_buildings: Сервис расчета рыночной стоимости жилой недвижимости г.Москвы")
 
 st.subheader("ШАГ 1. Загрузить пул объектов и найти координаты эталона:")
-
+# пользователь может загрузить свой файл с пулом и отмеченным эталоном:
 file = st.file_uploader('Загрузите таблицу для оценки xlsx: ', key='file')
-
+#если файл еще не загружен:
 if file is None:
     st.write('Ниже пример файла для загрузки. ','\n',
              'Для более четкого распознавания координат дома, адрес рекомендуется писать без обозначений "г", "д", '
@@ -39,6 +39,7 @@ if file is None:
     sample = pd.read_excel('./sample_for_user.xlsx')
     sample.loc[sample['Количество комнат'] == 'Студия', 'Количество комнат'] = 0.5
     st.write(sample)
+#если файл загружен, показываем, что он загрузил, и предлагаем запустить поиск координат эталона
 if file is not None:
     st.write(file)
     df1 = pd.read_excel(file)
@@ -48,7 +49,7 @@ if file is not None:
     st.subheader("Найти координаты эталона")
     find_etalon = st.button('Найти координаты эталона:')
 
-
+#если нажата кнопка "найти координаты эталона"
     if find_etalon:
 
         st.write('Ищем координаты местоположения эталона...')
@@ -64,8 +65,7 @@ if file is not None:
         df1['lat'] = None
         df1['lon'] = None
         df1.loc[df1['Эталон'] == 1, 'short_address'] = addressfind
-        #df1 = df1.copy()
-        #st.write(geocode(addressfind.tolist())[1])
+
         if geocode(addressfind.tolist()[0]) != None:
             coords = geocode(addressfind.tolist())[1]
             if len(coords) > 0:
@@ -99,11 +99,10 @@ with st.form('data'):
     metro_minutes = cols[3].number_input("Время до метро пешком (до N мин.)", value=1000.0, min_value = 3.0)
 
     submitted = st.form_submit_button(label="Подобрать аналоги")
-
+# если нажал кнопку "подобрать аналоги"
     if submitted:
 
-        #etalon = pd.read_excel(f'C:/Users/Sasha/PycharmProjects/hackaton2/userdata/etalon_{name}.xlsx').drop(
-            #['short_address', 'Unnamed: 0'], axis=1)
+
         etalon = pd.read_excel('./userdata/etalon.xlsx')
         etalon = etalon[etalon['Эталон'] == 1]
         st.write('Данные эталона:', etalon)
@@ -122,7 +121,7 @@ with st.form('data'):
 
 st.subheader('ШАГ 3. Расчет удельной стоимости')
 
-#даем возможность пользователю корректировать подбор расчет:
+
 with st.form('count'):
     st.write('Настройте параметры расчета:')
     cols = st.columns(4)
@@ -156,6 +155,8 @@ with st.form('count'):
 
     pool = etalon.copy() #Общий пул объектов всё вместе с эталоном
     etalon = etalon[etalon['Эталон'] == 1].drop('Unnamed: 0', axis=1)  # выделяем эталон
+    
+    #даем возможность пользователю корректировать подбор аналогов (исключить какие-то) и просим указать имя для удобства (оно впишется в итоговую таблицу):
     del_objects = cols[0].multiselect('Укажите аналоги, которые надо убрать из расчета: ', list(analogs['Unnamed: 0']))
     name = cols[1].text_input('Укажите свое ФИО для сохранения расчетов')
 
@@ -192,8 +193,7 @@ with st.form('count'):
                                 x['metro_minutes'] < 60
                                 else '>60')))), axis = 1)
 
-        #st.write('Сокращенный список аналогов:')
-        #st.write(analogs_corrected) #сокращенный список аналогов для расчета
+
 
         #теперь для каждого аналога корректируем по таблицам unit_price
         analogs_new = pd.DataFrame()
@@ -201,7 +201,7 @@ with st.form('count'):
             analog = count_analog_unitprice(etalon, analogs_corrected[analogs_corrected['Unnamed: 0'] == i],i)
             analogs_new = pd.concat([analogs_new, analog])
 
-        corr_unit_price_mean = analogs_new['corr_unit_price'].mean()
+        corr_unit_price_mean = analogs_new['corr_unit_price'].mean() #средняя unit_price
 
         st.write('Аналоги с процентами корректировок:')
         st.write(analogs_new)
@@ -226,7 +226,7 @@ with st.form('count'):
         analogs_new['сотрудник'] = name
         analogs_new['дата оценки'] = date_time
 
-        # и подкачка прогноза по стоимости, посчитанного ИИ:
+        # и подкачка прогноза по стоимости, посчитанного ИИ (Catboost):
 
         # сначала перегоним наш пул в тот вид, который поймет модель.
         pool_cat = pool_new.rename(columns={'Сегмент': 'segment',
