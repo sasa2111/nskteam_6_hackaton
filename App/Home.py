@@ -126,7 +126,7 @@ st.subheader('ШАГ 3. Расчет удельной стоимости')
 with st.form('count'):
     st.write('Настройте параметры расчета:')
     cols = st.columns(4)
-    #выбор радиуса поиска объявлений
+    
     analogs = pd.read_excel('./userdata/analogs.xlsx')
     etalon = pd.read_excel('./userdata/etalon.xlsx')
 
@@ -158,10 +158,7 @@ with st.form('count'):
     etalon = etalon[etalon['Эталон'] == 1].drop('Unnamed: 0', axis=1)  # выделяем эталон
     del_objects = cols[0].multiselect('Укажите аналоги, которые надо убрать из расчета: ', list(analogs['Unnamed: 0']))
     name = cols[1].text_input('Укажите свое ФИО для сохранения расчетов')
-    #далее пользователь набирает параметры - они сохраняются списками:
-    #segment = cols[1].multiselect('Сегмент:', ['новостройка', 'вторичка', 'старый жилой фонд'])
-    #rooms = cols[2].multiselect('Число комнат (студия - 0.5, св.план./пентх./аппартам. - 0):', [0,0.5, 1,2,3,4,5,6,7])
-    #repair = cols[3].multiselect('Состояние ремонта:', ['требует ремонта', 'косметический ремонт', 'евроремонт'])
+
 
     submitted1 = st.form_submit_button(label="Посчитать удельную стоимость и общую рыночную стоимость")
 
