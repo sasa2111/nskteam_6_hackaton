@@ -196,9 +196,9 @@ def update_notifications():
                   'kitchen':[], 'lat':[], 'long':[]}
     df = pd.DataFrame.from_dict(dictionary)
 
-    # зайдем в почту
-    username = 'sbor_dannyh_msk@mail.ru'
-    mail_pass = 'XZWfpTus7EvTPFhwdAqD'
+    # зайдем в почту (реквизиты настоящей почты скрыла, т.к. публичный доступ)
+    username = 'nekaya_pochta@mail.ru'
+    mail_pass = 'набор_символов'
     imap_server = "imap.mail.ru"
     imap = imaplib.IMAP4_SSL(imap_server)
     imap.login(username, mail_pass)
